@@ -1,0 +1,301 @@
+INS
+         TTL "APP-L-CACHE FAST READ UTILITY"
+         ORG $4000
+         OBJ $0800
+;---------------------------------
+;
+; EQUATES
+;
+;---------------------------------
+;
+; IOB OFFSETS
+;
+DRIVE    EPZ 2
+TRACK    EPZ 4
+SECTOR   EPZ 5
+BUFFERLO EPZ 8
+BUFFERHI EPZ 9
+COMMAND  EPZ 12
+ERROR    EPZ 13
+;
+; IOB COMMANDS
+;
+READ     EPZ 1
+WRITE    EPZ 2
+;
+; ZERO PAGE LOCATIONS
+;
+;    (NOT USED BY DOS; CAUTION
+;       WITH APPLICATIONS )
+;
+CURSECT  EPZ 6
+SINDEX   EPZ 7
+TINDEX   EPZ 8
+SADDR    EPZ $1A
+;
+; CONSTANTS
+;
+MAXSECT  EPZ $F
+CR       EPZ $8D
+DOT      EPZ $AE             ;"."
+;
+; ABSOLUTE LOCATIONS
+;
+RWTS     EQU $BD00
+SZFLG    EQU $BCFE           ;SIZE OF APP-L-CACHE
+CACHEOFF EQU $C082           ;SELECT APPLESOFT ROMS
+CACHEON  EQU $C08B           ;SELECT APP-L-CACHE RAM
+BANK     EQU $C08F
+ROMSW    EQU $C08F           ;TURN CACHE ROM ON
+DOS33    EQU $C803           ;DOS DRIVER ENTRY 
+RESTBANK EQU $C809           ;RESTORE CURRENT BANK @ $1E & $1F
+SAVEBANK EQU $C80C           ;SAVE CURRENT BANK @ $1E & $1F
+GSIZE    EQU $C80F           ;FIND SIZE OF APP-L-CACHE
+ROMSOFF  EQU $CFFF           ;TURN OFF ALL PERIPHERAL CARD ROMS
+BUFFER   EQU $D000           ;START OF APP-L-CACHE BANK
+KEYIN    EQU $FD1B           ;READ A KEY
+         PAG 
+;
+;
+;
+COUT     EQU $FDED           ;CHARACTER OUTPUT ROUTINE 
+;
+;
+;
+;---------------------------------
+;
+; A NOTE ABOUT COUT:
+;
+; THE PRESENT COUT ADDRESS, $FDED,
+; WORKS WITH ALL OUTPUT DEVICES --
+; EG. 80-COLUMN CARDS, PRINTERS.
+; IT DOES, HOWEVER, CAUSE THE AP-
+; PLE TO HANG WHEN THIS FILE IS 
+; BRUN DIRECTLY FROM THE KEYBOARD.
+;
+; IF THIS IS A PROBLEM FOR YOUR 
+; APPLICATION, CHANGE THE ABOVE 
+; LINE TO "COUT EQU $FDF0". THIS
+; WILL MEAN THAT ALL OUTPUT WILL
+; GO TO THE 40-COULMN APPLE SCREEN
+; WHETHER OR NOT YOUR 80-COULMN 
+; OR PRINTER CARD IS ON.
+;
+;---------------------------------
+;
+; SKIP OVER TABLES
+;
+START    JMP CODESTRT
+J2GTSIZE JMP GETSIZE
+;---------------------------------
+;
+; IOB TABLE
+;
+;---------------------------------
+IOB      BYT 1
+         BYT $60
+         BYT 1
+         DFS 3,0
+         ADR DEVTAB
+         ADR 0
+         ADR 0
+         BYT 1
+         ADR 0
+         BYT $60
+         BYT 1
+DEVTAB   BYT 0
+         BYT 1
+         DBY $EFD8
+;---------------------------------
+;
+; SECTOR OFFSET TABLE
+;
+;---------------------------------
+SOFFSET  BYT $F
+         BYT $E
+         BYT $D
+         BYT $C
+         BYT $B
+         BYT $A
+         BYT $9
+         BYT $8
+         BYT $7
+         BYT $6
+         BYT $5
+         BYT $4
+         BYT $3
+         BYT $2
+         BYT $1
+         BYT $0
+CODESTRT:
+;---------------------------------
+;
+; ROUTINE: FASTREAD
+;
+; PURPOSE: LOAD MINI-DISK INTO THE
+;   APP-L-CACHE
+;
+; ENTRY: IOB DRIVE = DRIVE
+;
+; EXIT: NONE
+;
+;---------------------------------
+FASTREAD LDA #READ
+         LDX #COMMAND
+         STA IOB,X
+         JSR DODISK
+         JSR PATRWTS
+         RTS 
+;---------------------------------
+;
+; ROUTINE: DODISK 
+;
+; PURPOSE: READ OR WRITE MINI-DISK
+;   FROM OR TO APP-L-CACHE
+;
+; ENTRY: IOB COMMAND = READ/WRITE
+;
+; EXIT: NONE
+;
+;---------------------------------
+DODISK   JSR SAVECARD
+         LDA #$22
+         STA TINDEX
+TRLOOP   BIT CACHEOFF        ;ENABLE MONITOR ROM
+         LDA #DOT
+         JSR COUT
+         BIT CACHEON         ;ENABLE CACHE RAM
+         BIT CACHEON
+         LDA TINDEX
+         LDX #TRACK
+         STA IOB,X
+         SEC 
+         LDA #$3B
+         SBC TINDEX
+         STA BANK            ;BANK = $3B - TRACK
+         LDA #BUFFER
+         LDX #BUFFERLO
+         STA IOB,X
+         LDA /BUFFER
+         LDX #BUFFERHI
+         STA IOB,X
+         JSR DOTRACK
+         DEC TINDEX
+         BPL TRLOOP
+         BIT CACHEOFF
+         JSR RESTCARD
+         LDA #CR
+         JSR COUT
+         RTS 
+;---------------------------------
+;
+; ROUTINE: DOTRACK
+;
+; PURPOSE: READ OR WRITE A MINI 
+;   TRACK FROM OR TO A 4K BUFFER
+;
+; ENTRY: IOB TRACK = TRACK
+;        IOB BUFFER = STRT OF 4K 
+;          BUFFER
+;
+; EXIT: NONE
+;
+;---------------------------------
+DOTRACK  LDA #$0
+         STA CURSECT
+         LDA #MAXSECT
+         STA SINDEX
+DOSECTOR LDY CURSECT
+         LDA SOFFSET,Y
+         LDX #SECTOR
+         STA IOB,X
+         CLC 
+         ADC /BUFFER
+         LDX #BUFFERHI
+         STA IOB,X
+         LDA /IOB
+         LDY #IOB
+         JSR RWTS
+         INC CURSECT
+         DEC SINDEX
+         BPL DOSECTOR
+         RTS 
+;---------------------------------
+;
+; ROUTINE: SAVECARD
+;
+; PURPOSE: SAVE STATUS OF APP-L-
+;   CACHE
+;
+;---------------------------------
+SAVECARD BIT ROMSOFF
+         BIT ROMSW
+         JSR SAVEBANK
+         RTS 
+;---------------------------------
+;
+; ROUTINE: RESTCARD
+;
+; PURPOSE: RESTORE STATUS OF APP-L
+;   -CACHE
+;
+;---------------------------------
+RESTCARD BIT ROMSOFF
+         BIT ROMSW
+         JSR RESTBANK
+         RTS 
+;---------------------------------
+;
+; ROUTINE: PATRWTS
+;
+; PURPOSE: PATCH RWTS TO CONNECT 
+;   THE APP-L-CACHE AS DRIVE(S)
+;   IN SLOT 1
+;
+;   TAKEN FROM RAMINIT.OBJ
+;
+;---------------------------------
+PATRWTS  LDA #$E0
+         STA $B7B8
+         LDA #$BC
+         STA $B7B9
+         LDA #$4C
+         STA $BD22
+         LDA #$EE
+         STA $BD23
+         LDA #$BC
+         STA $BD24
+         LDA PATSRCE
+         STA SADDR
+         LDA PATSRCE+1
+         STA SADDR+1
+         LDY PATNO
+^1       LDA (SADDR),Y
+         STA $BCE0,Y
+         DEY 
+         BPL <1
+         RTS 
+;
+; SOURCE FOR THE PATCH
+;
+PATSRCE  ADR PATCH
+;
+PATCH    LDX #$3C
+         STX $C08F
+         BIT $CFFF
+         BIT $C08F
+         JMP DOS33
+         CPX #$10
+         BNE >1
+         JMP $BD32
+^1:
+         LDA $C08E,X
+         JMP $BD25
+PATNO    BYT PATNO-PATCH
+;---------------------------------
+;
+; ROUTINE: GETSIZE
+;
+; PURPOSE: GET SIZE OF APP-L-CACHE
+;
+; ENTRY: NONE
